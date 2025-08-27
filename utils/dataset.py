@@ -107,36 +107,41 @@ def prepare_data(prot_seqs, smiles, validation_split, batch_size, tokenizer,
     # Sort the datasets according to the number of molecules per protein
     if verbose >= 0:
         fabric.print('Sorting the datasets by the number of molecules per protein...')
-    train_dataset = sort_by_molecules_per_protein(train_dataset, verbose, out='splits/train_split.csv')
-    val_dataset = sort_by_molecules_per_protein(val_dataset, verbose, out='splits/val_split.csv')
     
+    if len(val_dataset) > 0: # in the case there is no validation
+        val_dataset = sort_by_molecules_per_protein(val_dataset, verbose, out='splits/val_split.csv')
+        idxs_val = list(range(len(val_dataset)))
+        
+    train_dataset = sort_by_molecules_per_protein(train_dataset, verbose, out='splits/train_split.csv')
     idxs_train = list(range(len(train_dataset)))
-    idxs_val = list(range(len(val_dataset)))
     
     # Check if the sort worked
     if verbose >= 2:
         fabric.print('Lenghts of the sequences in the train and validation datasets:')
         train_lengths = [len(train_dataset[idx][0]) + len(train_dataset[idx][1]) for idx in idxs_train]
-        val_lengths = [len(val_dataset[idx][0]) + len(val_dataset[idx][1]) for idx in idxs_val]
         fabric.print(np.asarray(train_lengths))
-        fabric.print(np.asarray(val_lengths))
+        if len(val_dataset) > 0:
+            val_lengths = [len(val_dataset[idx][0]) + len(val_dataset[idx][1]) for idx in idxs_val]
+            fabric.print(np.asarray(val_lengths))
     
     # Plot the distribution of the lengths of the proteins and molecules in the train and validation datasets
     if verbose >= 2:
         fabric.print('Plotting the distribution of the lengths of the proteins and molecules...')
         plt.figure()    
         train_prots_lenghts = [len(train_dataset[idx][0]) for idx in idxs_train]
-        val_prots_lenghts = [len(val_dataset[idx][0]) for idx in idxs_val]
         plt.hist(train_prots_lenghts, bins=75, label='train proteins', alpha=0.5)
-        plt.hist(val_prots_lenghts, bins=75, label='val proteins', alpha=0.5)
+        if len(val_dataset) > 0:
+            val_prots_lenghts = [len(val_dataset[idx][0]) for idx in idxs_val]
+            plt.hist(val_prots_lenghts, bins=75, label='val proteins', alpha=0.5)
         plt.legend()
         plt.savefig('plots/hist_train_test_prots.pdf')
         
         plt.figure()
         train_mols_lenghts = [len(train_dataset[idx][1]) for idx in idxs_train]
-        val_mols_lenghts = [len(val_dataset[idx][1]) for idx in idxs_val]
         plt.hist(train_mols_lenghts, bins=100, label='train mols',alpha=0.5)
-        plt.hist(val_mols_lenghts, bins=100, label='val mols', alpha=0.5)
+        if len(val_dataset) > 0:
+            val_mols_lenghts = [len(val_dataset[idx][1]) for idx in idxs_val]
+            plt.hist(val_mols_lenghts, bins=100, label='val mols', alpha=0.5)
         plt.legend()
         plt.savefig('plots/hist_train_test_mols.pdf')
     

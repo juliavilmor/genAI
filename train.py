@@ -499,17 +499,22 @@ def train_model(prot_seqs,
             timer_train.stop()
 
         # validation
-        if verbose >=2 and fabric.is_global_zero:
-            timer_val = Timer(autoreset=True)
-            timer_val.start('Validation Epoch %d/%d'%(epoch+1, num_epochs))
+        if len(val_dataloader) > 0:
+            if verbose >=2 and fabric.is_global_zero:
+                timer_val = Timer(autoreset=True)
+                timer_val.start('Validation Epoch %d/%d'%(epoch+1, num_epochs))
 
-        avg_val_loss, val_acc, other_metrics = evaluate_epoch(model, val_dataloader,
-                                                              criterion, tokenizer,
-                                                              fabric, verbose)
-        avg_val_acc = fabric.all_reduce(val_acc, reduce_op='mean')
+            avg_val_loss, val_acc, other_metrics = evaluate_epoch(model, val_dataloader,
+                                                                criterion, tokenizer,
+                                                                fabric, verbose)
+            avg_val_acc = fabric.all_reduce(val_acc, reduce_op='mean')
 
-        if verbose >=2 and fabric.is_global_zero:
-            timer_val.stop()
+            if verbose >=2 and fabric.is_global_zero:
+                timer_val.stop()
+                
+        else:
+            fabric.print('Skipping validation...\n')
+            avg_val_loss,avg_val_acc,other_metrics = 0,0,{'precision':0,'recall':0,'f1':0}
 
         # Save the metrics into a csv
         if fabric.is_global_zero:
@@ -538,9 +543,12 @@ def train_model(prot_seqs,
                         "Validation Recall": other_metrics['recall'],
                         "Validation F1": other_metrics['f1']})
 
-        # Early stopping based on validation loss
-        early_stopping(avg_val_loss, model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch)
-
+        # Early stopping based on validation loss (or training loss if no validation)
+        if len(val_dataloader) > 0:
+            early_stopping(avg_val_loss, model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch)
+        else:
+            early_stopping(avg_train_loss, model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch)
+            
         if early_stopping.early_stop:
             if verbose >=0:
                 fabric.print(f"Early stopping after {epoch+1} epochs.")
