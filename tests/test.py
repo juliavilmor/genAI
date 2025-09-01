@@ -6,6 +6,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))) 
 from generate import generate
 from decoder_model import MultiLayerTransformerDecoder
 from tokenizer import Tokenizer
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def run_test(weight, outdir, outname):
     
@@ -81,6 +83,89 @@ def run_test(weight, outdir, outname):
             
     df_results = pd.DataFrame(results, columns=['test_type', 'seq_idx', 'sequence', 'Ngen', 'Nval', 'Nuniq', 'Nunk', 'validity', 'uniqueness', 'novelty'])
     df_results.to_csv(f'{outdir}/{outname}.csv', index=False)
+    
+def analyse_test(weight, results_csv, outdir):
+    # Load the results
+    df = pd.read_csv(results_csv)
+    
+    # Compute the mean, median, mode, and standard deviation of the validity, uniqueness, and novelty
+    stats = {}
+    for metric in ['validity', 'uniqueness', 'novelty']:
+        stats[metric] = {
+            'mean': df[metric].mean(),
+            'median': df[metric].median(),
+            'mode': df[metric].mode()[0],
+            'std': df[metric].std()
+        }
+    
+    print(f'Statistics (general) for model weights: {weight}')
+    for metric, values in stats.items():
+        print(f'{metric.capitalize()}:')
+        for stat, value in values.items():
+            print(f'  {stat}: {value}')
+    
+    # Compute the metrics for each test type
+    for test_type in df['test_type'].unique():
+        df_test = df[df['test_type'] == test_type]
+        print(f'\nStatistics for test type: {test_type}')
+        for metric in ['validity', 'uniqueness', 'novelty']:
+            mean = df_test[metric].mean()
+            median = df_test[metric].median()
+            mode = df_test[metric].mode()[0]
+            std = df_test[metric].std()
+            print(f'{metric.capitalize()}:')
+            print(f'  Mean: {mean}')
+            print(f'  Median: {median}')
+            print(f'  Mode: {mode}')
+            print(f'  Std: {std}')
+    
+    # Save the statistics as a report
+    with open(f'{outdir}/statistics_{weight.split("/")[-1].split(".")[0]}.txt', 'w') as f:
+        f.write(f'Statistics (general) for model weights: {weight}\n')
+        for metric, values in stats.items():
+            f.write(f'{metric.capitalize()}:\n')
+            for stat, value in values.items():
+                f.write(f'  {stat}: {value}\n')
+        f.write('\n')
+        for test_type in df['test_type'].unique():
+            df_test = df[df['test_type'] == test_type]
+            f.write(f'Statistics for test type: {test_type}\n')
+            for metric in ['validity', 'uniqueness', 'novelty']:
+                mean = df_test[metric].mean()
+                median = df_test[metric].median()
+                mode = df_test[metric].mode()[0]
+                std = df_test[metric].std()
+                f.write(f'{metric.capitalize()}:\n')
+                f.write(f'  Mean: {mean}\n')
+                f.write(f'  Median: {median}\n')
+                f.write(f'  Mode: {mode}\n')
+                f.write(f'  Std: {std}\n')
+            f.write('\n')
+                
+    # Plot a boxplot for each test type and each metric
+    for metric in ['validity', 'uniqueness', 'novelty']:
+        plt.figure(figsize=(8, 6))
+        sns.boxplot(x='test_type', y=metric, data=df)
+        plt.title(f'Boxplot of {metric.capitalize()} by Test Type')
+        plt.ylabel(f'{metric.capitalize()} (%)')
+        plt.xlabel('Test Type')
+        plt.ylim(0, 100)
+        plt.savefig(f'{outdir}/boxplot_{metric}_{weight.split("/")[-1].split(".")[0]}.png')
+        plt.close()
+        
+    # For each test type, plot the metric per sequence index
+    for test_type in df['test_type'].unique():
+        df_test = df[df['test_type'] == test_type]
+        for metric in ['validity', 'uniqueness', 'novelty']:
+            plt.figure(figsize=(20, 5))
+            sns.barplot(x='seq_idx', y=metric, data=df_test)
+            plt.title(f'{metric.capitalize()} per Sequence Index for Test Type: {test_type}')
+            plt.ylabel(f'{metric.capitalize()} (%)')
+            plt.xlabel('Sequence Index')
+            plt.ylim(0, 100)
+            plt.xticks(rotation=90)
+            plt.savefig(f'{outdir}/seqs_{metric}_{test_type}_{weight.split("/")[-1].split(".")[0]}.png')
+            plt.close()
 
 if __name__ == "__main__":
     
@@ -98,4 +183,5 @@ if __name__ == "__main__":
     
     # Run the test function
     run_test(weights_file, outdir, outname)
+    analyse_test(weights_file, f'{outdir}/{outname}.csv', outdir)
     
