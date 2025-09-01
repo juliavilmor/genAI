@@ -86,11 +86,27 @@ def extract_sequences_from_dataset(dataset, sequences, output):
     df_filt.to_csv(output, index=False)
     print(len(df_filt))
     
+def map_sequences_to_ids(sequences_file, dataset_file, output_file):
+    df = pd.read_csv(dataset_file)
+    print(len(df))
     
+    with open(sequences_file, 'r') as f:
+        seqs = f.read().splitlines()
+    
+    df_filt = df[df['Sequence'].isin(seqs)]
+    df_filt = df_filt.drop_duplicates(['Sequence'], keep='first')
+    print(len(df_filt))
+    print(df_filt)
+    df_filt.to_csv(output_file, index=False)
+
+
 if __name__ == '__main__':
     #get_sequences_from_range_perc_id('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_60_90.txt', '60-90')
     #get_sequences_from_range_perc_id('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_30_60.txt', '30-60')
     #get_sequences_from_range_perc_id('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_0_30.txt', '0-30')
     
-    extract_sequences_from_dataset('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_60_90.txt', '../data/splits/tmp.csv')
-    extract_sequences_from_dataset('../data/splits/tmp.csv', '../data/splits/sequences_30_60.txt', '../data/splits/training_split.csv')
+    #extract_sequences_from_dataset('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_60_90.txt', '../data/splits/tmp.csv')
+    #extract_sequences_from_dataset('../data/splits/tmp.csv', '../data/splits/sequences_30_60.txt', '../data/splits/training_split.csv')
+    
+    map_sequences_to_ids('../data/splits/sequences_60_90.txt', '../data/data_SMPBind_downsampled_50.csv', '../data/splits/test_60_90.csv')
+    map_sequences_to_ids('../data/splits/sequences_30_60.txt', '../data/data_SMPBind_downsampled_50.csv', '../data/splits/test_30_60.csv')
