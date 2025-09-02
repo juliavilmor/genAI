@@ -2,7 +2,6 @@ from lightning.fabric import Fabric
 import pandas as pd
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))) # TO DO: init to avoid this
 from generate import generate
 from decoder_model import MultiLayerTransformerDecoder
 from tokenizer import Tokenizer
@@ -14,9 +13,10 @@ def run_test(weight, outdir, outname):
     os.makedirs(outdir, exist_ok=True)
 
     # List of protein sequences for the 3 tests (harcoded for now)
-    high = pd.read_csv('../data/splits/test_90.csv')
-    medium = pd.read_csv('../data/splits/test_60_90.csv')
-    low = pd.read_csv('../data/splits/test_30_60.csv')
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    high = pd.read_csv(os.path.join(current_dir, '../data/splits/test_90.csv'))
+    medium = pd.read_csv(os.path.join(current_dir, '../data/splits/test_60_90.csv'))
+    low = pd.read_csv(os.path.join(current_dir, '../data/splits/test_30_60.csv'))
     
     # Prepare the sequences for the test
     high = high.set_index('Uniprot')['Sequence'].to_dict()
