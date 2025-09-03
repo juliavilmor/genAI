@@ -2,6 +2,7 @@ from lightning.fabric import Fabric
 import pandas as pd
 import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from generate import generate
 from decoder_model import MultiLayerTransformerDecoder
 from tokenizer import Tokenizer
@@ -66,7 +67,7 @@ def run_test(weight, outdir, outname):
             # Add Ngen, Nval, Nuniq, Nunk
             Nval = len(generated_smiles)
             Nuniq = len(set(generated_smiles['smiles'].tolist())) # PENDING: filter by molecular analysis
-            training_smiles = pd.read_csv('../data/splits/training_split.csv')['SMILES'].tolist()
+            training_smiles = pd.read_csv(os.path.join(current_dir, '../data/splits/training_split.csv'))['SMILES'].tolist()
             Nunk = len(set(generated_smiles['smiles'].tolist()) - set(training_smiles))
             print('Generated, Valid, Unique, Novel:')
             print(Ngen, Nval, Nuniq, Nunk)
