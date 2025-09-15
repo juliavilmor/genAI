@@ -55,19 +55,18 @@ def get_sequences_from_range_perc_id(dataset, output_file, range):
         # get one random sequence and calculate the percentage id
         random_seq = df['Sequence'].sample(n=1).iloc[0]
         if random_seq in stored_sequences: continue # skip if already in the file
-        df = df[df['Sequence'] != random_seq] # extract random sequence from the dataframe
 
         df['perc_id'] = df['Sequence'].apply(lambda seq: calculate_identity(random_seq, seq))
-        mean_perc_id = df['perc_id'].max()
+        max_perc_id = df.loc[df['Sequence'] != random_seq, 'perc_id'].max()
         
-        print(mean_perc_id, random_seq)
+        print(max_perc_id, random_seq)
 
         # get range
         top = int(range.split('-')[-1])
         bott = int(range.split('-')[0])
         
         # store the sequence if it is inside the percentage range
-        if bott <= mean_perc_id < top:
+        if bott <= max_perc_id < top:
             stored_sequences.append(random_seq)
             with open(output_file, 'a') as f:
                 f.write(f'{random_seq}\n')
@@ -108,5 +107,22 @@ if __name__ == '__main__':
     #extract_sequences_from_dataset('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_60_90.txt', '../data/splits/tmp.csv')
     #extract_sequences_from_dataset('../data/splits/tmp.csv', '../data/splits/sequences_30_60.txt', '../data/splits/training_split.csv')
     
+    #map_sequences_to_ids('../data/splits/sequences_60_90.txt', '../data/data_SMPBind_downsampled_50.csv', '../data/splits/test_60_90.csv')
+    #map_sequences_to_ids('../data/splits/sequences_30_60.txt', '../data/data_SMPBind_downsampled_50.csv', '../data/splits/test_30_60.csv')
+    
+    # test how much sequences in this range
+    #get_sequences_from_range_perc_id('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_0_40.txt', '0-40')
+    #get_sequences_from_range_perc_id('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_0_30_new.txt', '0-30')
+    #get_sequences_from_range_perc_id('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_40_60.txt', '40-60')
+    #get_sequences_from_range_perc_id('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_60_90.txt', '60-90')
+    
+    # NEW SPLITS (0-40, 40-60, 60-90)
+    extract_sequences_from_dataset('../data/data_SMPBind_downsampled_50.csv', '../data/splits/sequences_60_90.txt', '../data/splits/tmp.csv')
+    extract_sequences_from_dataset('../data/splits/tmp.csv', '../data/splits/sequences_40_60.txt', '../data/splits/tmp2.csv')
+    extract_sequences_from_dataset('../data/splits/tmp2.csv', '../data/splits/sequences_0_40.txt', '../data/splits/training_split.csv')
+    
     map_sequences_to_ids('../data/splits/sequences_60_90.txt', '../data/data_SMPBind_downsampled_50.csv', '../data/splits/test_60_90.csv')
-    map_sequences_to_ids('../data/splits/sequences_30_60.txt', '../data/data_SMPBind_downsampled_50.csv', '../data/splits/test_30_60.csv')
+    map_sequences_to_ids('../data/splits/sequences_40_60.txt', '../data/data_SMPBind_downsampled_50.csv', '../data/splits/test_40_60.csv')
+    map_sequences_to_ids('../data/splits/sequences_0_40.txt', '../data/data_SMPBind_downsampled_50.csv', '../data/splits/test_0_40.csv')
+    
+    
