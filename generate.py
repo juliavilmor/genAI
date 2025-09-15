@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from decoder_model import MultiLayerTransformerDecoder
-from tokenizer import Tokenizer, ProteinTokenizer, MolecularTokenizer
+from models.decoder_model import MultiLayerTransformerDecoder
+from utils.tokenizer import Tokenizer, ProteinTokenizer, MolecularTokenizer
 import torch.nn.functional as F
 import pandas as pd
 from lightning.fabric import Fabric

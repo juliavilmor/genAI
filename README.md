@@ -13,6 +13,7 @@ Using a **prefix-decoder architecture** (decoder-only transformer), GenAI can ge
 - [Repository Structure](#repository-structure) 🔍
 - [Usage](#usage) 📖
 - [Configuration](#configuration) ⚙️
+- [Examples](#examples) 🧪
 - [Contributing](#contributing) 🤝
 - [License](#license) 📜
 - [Contact](#contact) 📩
@@ -41,20 +42,20 @@ pip install -r requirements.txt
 ## Repository Structure
 ```bash
 genAI
-├── data/                   # Example datasets and datased used for training
+├── data/                   # Datasets used for training and testing
 ├── data_preparation/       # Data preparation scripts
-├── old_scripts/            # --> I will remove this folder from the repo
+├── metrics/                # Folder to store training metrics into csvs
+├── plots/                  # Folder to store analysis plots
+├── scripts/                # Scripts to run genAI into a cluster
+├── tests/                  # Folder to store tests results
 ├── utils/                  # Utils scripts
 ├── wandb/                  # wandb tracking files
 ├── weights/                # Weights from training the model
-├── examples/               # --> TO DO
-├── config.yaml             # Configuration file with parameters for training
+├── examples/               # Examples of the model
 ├── decoder_model.py        # The prefix-decoder model
-├── generate.py             # Script for generate molecules
+├── generate.py             # Script for generating molecules
 ├── README.md               # Project documentation
 ├── requirements.txt        # Project requirements
-├── run_training.sh         # Script for run the training in a cluster
-├── tokenizer.py            # The tokenizer used in the model
 └── train.py                # Training script
 ```
 
@@ -69,10 +70,17 @@ or **Load a pretrained model** from:
 ```bash
 'weights/model_weights.pth'
 ```
-2. **Generate Molecules**:
+
+2. **Test training performace**:
+```bash
+python tests/test.py --weights_file weights/model_weights.pth --outdir tests/test_1 --outname results
+```
+
+3. **Generate Molecules for your specific target**:
 ```bash
 python generate.py
 ```
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -108,6 +116,10 @@ mol_max_length: 80                                   # Maximun length of the mol
 es_patience: 6                                       # Patience parameter for early stopping
 es_delta: 0.0001                                     # Delta parameter for early stopping
 ```
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Examples
+This section will be available soon! 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -130,8 +142,6 @@ This project is licensed under the x License. See LICENSE for more details.
 
 ## Contact
 Júlia Vilalta-Mor - julia.vilalta@bsc.es   |   Isaac Filella-Mercè - isaac.filella1@bsc.es   |   Víctor Guallar - victor.guallar@bsc.es
-
-Project Link: [https://github.com/juliavilmor/genAI](https://github.com/juliavilmor/genAI)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

@@ -1,4 +1,4 @@
-data_path: 'data/data_ChEMBL_BindingDB_clean.csv'
+data_path: 'data/data_SMPBind_sample_1000.csv'
 col_prots: 'Sequence'
 col_mols: 'SMILES'
 d_model: 1024
@@ -10,6 +10,7 @@ batch_size: 10
 num_epochs: 10
 learning_rate: 0.0001
 loss_function: 'crossentropy'
+label_smoothing: False
 optimizer: 'AdamW'
 weight_decay: 0.001
 betas: [0.9, 0.999]
@@ -24,4 +25,7 @@ prot_max_length: 600
 mol_max_length: 80
 es_patience: 5
 es_delta: 0.0001
+scheduled_sampling: 1
 seed: 1234
+checkpoint_epoch: True
+resume_training: False

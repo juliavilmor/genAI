@@ -8,7 +8,7 @@ import seaborn as sns
 import torchvision
 from torchview import draw_graph
 from torchinfo import summary
-from tokenizer import Tokenizer
+from utils.tokenizer import Tokenizer
 from lightning.fabric import Fabric
 
 

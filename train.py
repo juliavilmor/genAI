@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from decoder_model import MultiLayerTransformerDecoder
+from models.decoder_model import MultiLayerTransformerDecoder
 from utils.dataset import prepare_data
 from utils.earlystopping import EarlyStopping
 from utils.configuration import load_config
 from utils.timer import Timer
 from utils import memory
-from tokenizer import Tokenizer
+from utils.tokenizer import Tokenizer
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 from lightning.fabric import Fabric
 from torchinfo import summary
