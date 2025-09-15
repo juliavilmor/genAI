@@ -17,16 +17,19 @@ def run_test(weight, outdir, outname):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     high = pd.read_csv(os.path.join(current_dir, '../data/splits/test_90.csv'))
     medium = pd.read_csv(os.path.join(current_dir, '../data/splits/test_60_90.csv'))
-    low = pd.read_csv(os.path.join(current_dir, '../data/splits/test_30_60.csv'))
+    low = pd.read_csv(os.path.join(current_dir, '../data/splits/test_40_60.csv'))
+    very_low = pd.read_csv(os.path.join(current_dir, '../data/splits/test_0_40.csv'))
     
     # Prepare the sequences for the test
     high = high.set_index('Uniprot')['Sequence'].to_dict()
     medium = medium.set_index('Uniprot')['Sequence'].to_dict()
     low = low.set_index('Uniprot')['Sequence'].to_dict()
+    very_low = very_low.set_index('Uniprot')['Sequence'].to_dict()
     seqs = {
         'high': high,
         'medium': medium,
-        'low': low
+        'low': low,
+        'very_low': very_low
     }
 
     # Define total molecules to generate (harcoded for now)
