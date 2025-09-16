@@ -4,7 +4,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from generate import generate
-from decoder_model import MultiLayerTransformerDecoder
+from models.decoder_model import MultiLayerTransformerDecoder
 from utils.tokenizer import Tokenizer
 import matplotlib.pyplot as plt
 import seaborn as sns
