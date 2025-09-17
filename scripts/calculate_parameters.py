@@ -64,16 +64,18 @@ if __name__ == "__main__":
     vocab_size = tokenizer.vocab_size
 
     d_model_list = [128, 256, 512, 640, 768, 1024]
-    num_heads_list = [4, 8, 12]
+    num_heads_list = [4]
     ff_hidden_list = [256, 512, 1024, 1536, 2048, 2560, 4096, 4608]
     num_layers_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
                        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
 
     df = sweep_parameters(vocab_size, d_model_list, num_heads_list, ff_hidden_list, num_layers_list)
     print(df)
+    df.to_csv('parameter_calculation.csv', index=False)
     
     # select the rows within a range of parameters
-    params = 30000000 # 30M
-    error = 2000000   # 2M
+    params = 40000000 # 40M
+    error = 1000000   # 1M
     df_selected = df[(df['parameters'] >= params - error) & (df['parameters'] <= params + error)]
     print(df_selected)
+    df_selected.to_csv('parameter_calculation_40M.csv', index=False)
