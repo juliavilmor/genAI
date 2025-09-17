@@ -59,7 +59,7 @@ for i, weight in enumerate(weights_files):
         generated_smiles, sucess_rate = generate(100, seq, model, fabric, max_length=80,\
                                                 temperature=1.2, verbose=False,\
                                                 outdir='test_generation_new_dataset',\
-                                                outname='generated_molecules_weights_%d_seq_%d_expanded.csv'%(i, j))
+                                                outname='generated_molecules_weights_%d_seq_%d_expanded'%(i, j))
         print(i, j, sucess_rate)
         
         results.append([i, weight, j, seq, sucess_rate])

@@ -65,7 +65,7 @@ def run_test(weight, outdir, outname):
             generated_smiles, sucess_rate = generate(Ngen, seq, model, fabric, max_length=80,\
                                                     temperature=1.2, verbose=False,\
                                                     outdir=outdir,\
-                                                    outname='generated_molecules_%s_seq_%s.csv'%(test_type, i))
+                                                    outname='generated_molecules_%s_seq_%s'%(test_type, i))
             
             # Add Ngen, Nval, Nuniq, Nunk
             Nval = len(generated_smiles)
