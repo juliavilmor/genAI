@@ -29,9 +29,11 @@ class DecoderBlock(nn.Module):
 
     def forward(self, x, padding_mask, target_mask, fabric):
         x = fabric.to_device(x)
-        padding_mask = fabric.to_device(padding_mask)
-        padding_mask = padding_mask.to(dtype=torch.float32)
 
+        # `padding_mask` is a boolean key_padding_mask (True == <pad> == ignore),
+        # already on-device from MultiLayerTransformerDecoder.forward. It must NOT
+        # be a float mask: nn.MultiheadAttention *adds* a float mask to the scores,
+        # so float 1.0 for pads leaves padding effectively un-masked.
         attn_output, _ = self.self_attention(x, x, x,
                                              key_padding_mask=padding_mask,
                                              attn_mask=target_mask)
@@ -91,48 +93,51 @@ def create_partial_mask(sequence, token_id):
 
 def create_prefix_decoder_mask(sequence, token_id):
     """
-    Create an attention mask for a prefix-decoder model.
-    - The tokens before the `token_id` (prefix) can only attend to themselves.
-    - The tokens after the prefix follow a standard subsequent mask.
+    Create a boolean attention mask for a prefix-decoder model.
+    - The tokens before the `token_id` (prefix) attend to each other freely.
+    - The tokens after the prefix follow a standard subsequent (causal) mask.
     - The tokens before the prefix cannot attend to the tokens after the prefix.
+
+    A ``True`` entry means "this (query, key) pair is NOT allowed to attend"
+    (the same convention as a boolean ``key_padding_mask``); keeping both masks
+    boolean avoids the "mismatched mask type" deprecation in nn.MultiheadAttention.
 
     Args:
         sequence (torch.Tensor): Tensor of shape (batch_size, seq_len), containing tokenized sequences.
         token_id (int): The token id marking the boundary between prefix and subsequent tokens.
 
     Returns:
-        torch.Tensor: The attention mask of shape (seq_len, seq_len).
+        torch.BoolTensor of shape (seq_len, seq_len). Example (prefix length 4):
 
-        tensor([[0., 0., 0., 0., -inf, -inf, -inf, -inf, -inf, -inf],
-                [0., 0., 0., 0., -inf, -inf, -inf, -inf, -inf, -inf],
-                [0., 0., 0., 0., -inf, -inf, -inf, -inf, -inf, -inf],
-                [0., 0., 0., 0., -inf, -inf, -inf, -inf, -inf, -inf],
-                [0., 0., 0., 0., 0., -inf, -inf, -inf, -inf, -inf],
-                [0., 0., 0., 0., 0., 0., -inf, -inf, -inf, -inf],
-                [0., 0., 0., 0., 0., 0., 0., -inf, -inf, -inf],
-                [0., 0., 0., 0., 0., 0., 0., 0., -inf, -inf],
-                [0., 0., 0., 0., 0., 0., 0., 0., 0., -inf],
-                [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]])
+        tensor([[False, False, False, False,  True,  True,  True,  True,  True,  True],
+                [False, False, False, False,  True,  True,  True,  True,  True,  True],
+                [False, False, False, False,  True,  True,  True,  True,  True,  True],
+                [False, False, False, False,  True,  True,  True,  True,  True,  True],
+                [False, False, False, False, False,  True,  True,  True,  True,  True],
+                [False, False, False, False, False, False,  True,  True,  True,  True],
+                [False, False, False, False, False, False, False,  True,  True,  True],
+                [False, False, False, False, False, False, False, False,  True,  True],
+                [False, False, False, False, False, False, False, False, False,  True],
+                [False, False, False, False, False, False, False, False, False, False]])
     """
     start_idx = (sequence[0] == token_id).nonzero(as_tuple=True)[0][0].item()
-    return _build_prefix_decoder_mask(sequence.size(1), start_idx,
-                                      sequence.device, torch.float32)
+    return _build_prefix_decoder_mask(sequence.size(1), start_idx, sequence.device)
 
 
 @lru_cache(maxsize=128)
-def _build_prefix_decoder_mask(seq_length, start_idx, device, dtype):
+def _build_prefix_decoder_mask(seq_length, start_idx, device):
     """Cached mask construction. The mask only depends on (seq_length, start_idx),
     so with fixed-length padding it is built once per shape instead of per forward.
     The returned tensor is shared, so callers must treat it as read-only."""
-    mask = torch.zeros(seq_length, seq_length, device=device, dtype=dtype)
+    mask = torch.zeros(seq_length, seq_length, dtype=torch.bool, device=device)
 
-    # Apply subsequent mask for the tokens after the prefix
-    subsequent_mask = generate_square_subsequent_mask(seq_length - start_idx)
-    mask[start_idx:, start_idx:] = subsequent_mask.to(device=device, dtype=dtype)
+    # Suffix rows: block attention to future (strictly-later) positions.
+    suffix = seq_length - start_idx
+    mask[start_idx:, start_idx:] = torch.triu(
+        torch.ones(suffix, suffix, dtype=torch.bool, device=device), diagonal=1)
 
-    # Apply -inf to prevent the prefix (rows 0 to start_idx-1) from attending
-    # to tokens after the prefix (columns start_idx to seq_length-1)
-    mask[:start_idx, start_idx:] = float('-inf')
+    # Prefix rows: block attention to any token after the prefix.
+    mask[:start_idx, start_idx:] = True
 
     return mask
 
@@ -153,7 +158,11 @@ class MultiLayerTransformerDecoder(nn.Module):
     def forward(self, x, padding_mask, delim_tokenidx, fabric):
         x = x.long().clone()
         x = fabric.to_device(x)
-        padding_mask = fabric.to_device(padding_mask)
+
+        # key_padding_mask for every layer: True == <pad> == ignore. The batch
+        # attention_mask already uses 1 for <pad> / 0 for real tokens, so a plain
+        # bool cast has the right polarity. Cast once here, not per block.
+        padding_mask = fabric.to_device(padding_mask).to(dtype=torch.bool)
 
         target_mask = create_prefix_decoder_mask(x, delim_tokenidx)
 

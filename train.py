@@ -62,17 +62,16 @@ def train_epoch(model, dataloader, criterion, optimizer, tokenizer, fabric, verb
         optimizer.step()
         optimizer.zero_grad(set_to_none=True) # set_to_none=True to save memory
 
-        # Accuracy computed only on predicted mol tokens (inlcuding pads)
+        # Token accuracy over the molecule span, ignoring the -100 (protein / pad
+        # / delim) positions so padding-after-<eos> does not inflate the score.
         delim_idx = (input_tensor[0] == tokenizer.delim_token_id).nonzero().item()
         _, preds = torch.max(logits, dim=1)
-        preds = preds.reshape(batch_size, seq_length)
-        preds = preds[:, delim_idx:]
-        labels = labels.reshape(batch_size, seq_length)
-        labels = labels[:, delim_idx:]
-        labels[labels==-100] = 1
-        
-        total_train_correct += (preds == labels).sum().item()
-        total_train_samples += labels.numel()
+        preds = preds.reshape(batch_size, seq_length)[:, delim_idx:]
+        labels = labels.reshape(batch_size, seq_length)[:, delim_idx:]
+        scored = labels != -100
+
+        total_train_correct += ((preds == labels) & scored).sum().item()
+        total_train_samples += scored.sum().item()
 
     avg_train_loss = total_train_loss / len(dataloader)
     train_acc = total_train_correct / total_train_samples
@@ -197,15 +196,16 @@ def train_epoch_scheduled_sampling(model, dataloader, criterion, optimizer, toke
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)  # Free memory
 
-        # Accuracy computation (ignoring padding)
+        # Token accuracy over the molecule span, ignoring the -100 positions
+        # (protein / pad / delim) rather than remapping them to <pad>.
         delim_idx = (input_tensor[0] == tokenizer.delim_token_id).nonzero().item()
         _, preds = torch.max(logits, dim=1)
-        preds = preds.reshape(batch_size, seq_length)[:, delim_idx:]  # Ignore prefix
-        labels = labels.reshape(batch_size, seq_length)[:, delim_idx:]  # Ignore prefix
-        labels[labels == -100] = 1  # Ignore loss-padding
+        preds = preds.reshape(batch_size, seq_length)[:, delim_idx:]
+        labels = labels.reshape(batch_size, seq_length)[:, delim_idx:]
+        scored = labels != -100
 
-        total_train_correct += (preds == labels).sum().item()
-        total_train_samples += labels.numel()
+        total_train_correct += ((preds == labels) & scored).sum().item()
+        total_train_samples += scored.sum().item()
         
         fabric.barrier()
         
@@ -262,18 +262,22 @@ def evaluate_epoch(model, dataloader, criterion, tokenizer, fabric, verbose=1):
             loss = criterion(logits, labels)
             total_val_loss += loss.item()
             
-            # Get predicted and corresponding labels (only for molecule)
+            # Free-running predictions vs. ground-truth over the molecule span.
+            # NOTE: `predicted` is an autoregressive rollout, so one early mistake
+            # shifts every later token -> these token-level metrics are a
+            # pessimistic lower bound, not teacher-forced accuracy.
             predicted = torch.cat(predicted, dim=1)
-            labels = labels.reshape(batch_size, seq_length)
-            labels = labels[:, delim_idx:]
-            labels[labels==-100] = 1
+            labels = labels.reshape(batch_size, seq_length)[:, delim_idx:]
             labels = labels.contiguous().view(-1)
             predicted = predicted.contiguous().view(-1)
 
+            keep = labels != -100  # drop protein / pad / delim targets
+            labels = labels[keep]
+            predicted = predicted[keep]
+
             total_val_predicted.extend(predicted.cpu().numpy())
             total_val_labels.extend(labels.cpu().numpy())
-            correct = (predicted == labels).sum().item()
-            
+
             fabric.barrier()
             
     avg_val_loss = total_val_loss / len(dataloader)
