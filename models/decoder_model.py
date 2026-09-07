@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from functools import lru_cache
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -28,11 +29,9 @@ class DecoderBlock(nn.Module):
 
     def forward(self, x, padding_mask, target_mask, fabric):
         x = fabric.to_device(x)
-        target_mask = fabric.to_device(target_mask)
         padding_mask = fabric.to_device(padding_mask)
         padding_mask = padding_mask.to(dtype=torch.float32)
-        target_mask = target_mask.to(dtype=torch.float32)
-        
+
         attn_output, _ = self.self_attention(x, x, x,
                                              key_padding_mask=padding_mask,
                                              attn_mask=target_mask)
@@ -115,15 +114,21 @@ def create_prefix_decoder_mask(sequence, token_id):
                 [0., 0., 0., 0., 0., 0., 0., 0., 0., -inf],
                 [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]])
     """
-    batch_size, seq_length = sequence.size()
-    mask = torch.zeros(seq_length, seq_length)
-
-    # Find the index of the prefix token
     start_idx = (sequence[0] == token_id).nonzero(as_tuple=True)[0][0].item()
+    return _build_prefix_decoder_mask(sequence.size(1), start_idx,
+                                      sequence.device, torch.float32)
+
+
+@lru_cache(maxsize=128)
+def _build_prefix_decoder_mask(seq_length, start_idx, device, dtype):
+    """Cached mask construction. The mask only depends on (seq_length, start_idx),
+    so with fixed-length padding it is built once per shape instead of per forward.
+    The returned tensor is shared, so callers must treat it as read-only."""
+    mask = torch.zeros(seq_length, seq_length, device=device, dtype=dtype)
 
     # Apply subsequent mask for the tokens after the prefix
     subsequent_mask = generate_square_subsequent_mask(seq_length - start_idx)
-    mask[start_idx:, start_idx:] = subsequent_mask
+    mask[start_idx:, start_idx:] = subsequent_mask.to(device=device, dtype=dtype)
 
     # Apply -inf to prevent the prefix (rows 0 to start_idx-1) from attending
     # to tokens after the prefix (columns start_idx to seq_length-1)
@@ -155,10 +160,10 @@ class MultiLayerTransformerDecoder(nn.Module):
         x = self.embedding(x)
         x = self.pos_encoder(x, fabric)
         
+        # The mask prevents attention to future positions. We mask just the
+        # molecules (the second half of the input). It is built directly on the
+        # device of `x`, so no per-layer transfer is needed.
         for transformer_block in self.transformer_blocks:
-            # Generate a mask to prevent attention to future positions
-            # We mask just the molecules (the second half of the input)
-            target_mask = fabric.to_device(target_mask)
             x = transformer_block(x, padding_mask, target_mask, fabric)
 
         output = self.linear(x)

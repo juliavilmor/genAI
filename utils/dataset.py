@@ -58,33 +58,26 @@ def collate_fn(batch, tokenizer, prot_max_length, mol_max_length):
     return {'input_ids': input_ids, 'attention_mask': attention_mask, 'labels': labels}
 
 def sort_by_molecules_per_protein(dataset, verbose=0, out='splits/train_split.csv'):
-    # Convert dataset to DataFrame for easier manipulation
-    data = [{'sequence': dataset[idx][0], 'smiles': dataset[idx][1]} for idx in range(len(dataset))]
-    df = pd.DataFrame(data)
-    
-    # Sort the DataFrame by the number of unique SMILES per protein sequence (ascending order)
-    mol_count = df.groupby('sequence')['smiles'].nunique().reset_index()
-    mol_count.columns = ['sequence', 'num_molecules']
-    mol_count = mol_count.sort_values(by='num_molecules', ascending=False)
-    
-    sorted_df = df.merge(mol_count, on='sequence')
-    sorted_df = sorted_df.sort_values(by=['num_molecules','sequence'], ascending=[True,True])
-    sorted_df.drop(columns=['num_molecules'], inplace=True)
-    
+    """Group the dataset by protein, ordering proteins by how many distinct
+    molecules they have. Returns a Subset in that order."""
+
+    # The DataFrame index is the dataset index, so it survives the sort and can
+    # be handed straight to Subset.
+    df = pd.DataFrame({'sequence': [dataset[idx][0] for idx in range(len(dataset))],
+                       'smiles': [dataset[idx][1] for idx in range(len(dataset))]})
+    df['num_molecules'] = df.groupby('sequence')['smiles'].transform('nunique')
+    sorted_df = df.sort_values(by=['num_molecules', 'sequence'],
+                               ascending=[True, True], kind='stable')
+
     if verbose >= 2:
         # Print the sorted DataFrame for debugging
         print("Sorted DataFrame by number of molecules per protein:")
         print(sorted_df.head())
-        
-        # Save the splits into a csv
-        sorted_df.to_csv(out, index=False)
 
-    # Convert the sorted DataFrame back to a subset
-    data = list(zip(sorted_df['sequence'], sorted_df['smiles']))
-    indices = [idx for idx, item in enumerate(dataset) if (item[0], item[1]) in data]
-    sorted_dataset = Subset(dataset, indices)
-    
-    return sorted_dataset
+        # Save the splits into a csv
+        sorted_df.drop(columns=['num_molecules']).to_csv(out, index=False)
+
+    return Subset(dataset, sorted_df.index.tolist())
 
 # DATA PREPARATION
 def prepare_data(prot_seqs, smiles, validation_split, batch_size, tokenizer,
@@ -171,3 +164,16 @@ def prepare_data(prot_seqs, smiles, validation_split, batch_size, tokenizer,
                                                                 mol_max_length))
 
     return train_dataloader, val_dataloader
+
+
+if __name__ == '__main__':
+    # Self-check: the sort must actually group rows by protein, ordering proteins
+    # by their number of distinct molecules (ascending).
+    prot_seqs = ['B', 'A', 'C', 'A', 'B', 'A']
+    smiles = ['b1', 'a1', 'c1', 'a2', 'b2', 'a3']
+    sorted_ds = sort_by_molecules_per_protein(ProtMolDataset(prot_seqs, smiles))
+    got = [sorted_ds[i] for i in range(len(sorted_ds))]
+
+    assert [p for p, _ in got] == ['C', 'B', 'B', 'A', 'A', 'A'], got
+    assert sorted(got) == sorted(zip(prot_seqs, smiles)), 'sort must be a permutation'
+    print('ok')
