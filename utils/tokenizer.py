@@ -29,16 +29,21 @@ class MolecularTokenizer:
         self.eos_token = '<eos>'
         self.unk_token = '<unk>'
         self.special_tokens = [self.cls_token, self.pad_token, self.eos_token, self.unk_token]
-        self.regex = '(Br?|Cl?|As|Sb|Se|Si|Sn|Te|H|N|O|S|P|F|I|b|c|n|o|s|p|\\(|\\)|\\[|\\]|\\.|\\=|\\#|\\-|\\+|\\\\|\\/|\\:|\\~|@@|@|\\?|>>?|\\*|\\$|\\%[0-9]{2}|[0-9])'
+        # Two-letter atoms (Br, Cl, As, ... and the aromatic se/te) come before the
+        # single-letter alternatives so the regex consumes them whole. Aromatic
+        # selenium/tellurium appear as [se]/[te]; without their own alternative the
+        # trailing 'e' was silently dropped ([se] -> [s]).
+        self.regex = '(Br?|Cl?|As|Sb|Se|Si|Sn|Te|se|te|H|N|O|S|P|F|I|b|c|n|o|s|p|\\(|\\)|\\[|\\]|\\.|\\=|\\#|\\-|\\+|\\\\|\\/|\\:|\\~|@@|@|\\?|>>?|\\*|\\$|\\%[0-9]{2}|[0-9])'
         self.build_vocab()
-        
+
     def build_vocab(self):
-        # Fixed vocabulary for molecular SMILES, 88 tokens
+        # Fixed vocabulary for molecular SMILES. 'se'/'te' are appended (not
+        # inserted) so every pre-existing token id is unchanged.
         chemical_tokens = [
             '#', '(', ')', '*', '+', '-', '/', '1', '2', '3', '4', '5', '6',\
             '7', '8', '9', '=', '@', '@@', 'As', 'B', 'Br', 'C', 'Cl', 'F',\
             'H', 'I', 'N', 'O', 'P', 'S', 'Sb', 'Se', 'Si', 'Sn', 'Te', '[',\
-            '\\', ']', 'b' ,'c', 'n', 'o', 's'
+            '\\', ']', 'b' ,'c', 'n', 'o', 's', 'se', 'te'
             ]
         
         self.vocab = self.special_tokens + chemical_tokens
