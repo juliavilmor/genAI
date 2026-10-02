@@ -20,3 +20,5 @@ data_preparation/*.csv
 *.gv
 memory_snapshot.pickle
 last_sync.txt
+LAB_NOTEBOOK.md
+RECAP.md
