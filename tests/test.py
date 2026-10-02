@@ -1,5 +1,6 @@
 from lightning.fabric import Fabric
 import pandas as pd
+import re
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -35,11 +36,14 @@ def run_test(weight, outdir, outname):
     # Define total molecules to generate (harcoded for now)
     Ngen = 100
 
-    # Define the hyperparameters --> take them from the weights name
-    d_model        = int(weight.split('_')[1].split('dm')[1])
-    num_heads      = int(weight.split('_')[2].split('nh')[1])
-    ff_hidden_layer  = int(weight.split('_')[3].split('ff')[1])
-    num_layers     = int(weight.split('_')[4].split('nl')[1].split('.')[0])
+    # Define the hyperparameters --> take them from the weights name.
+    # Regex, not positional split('_')[i]: the latter breaks as soon as the
+    # directory part of `weight` contains its own underscore (e.g.
+    # weights/partB_val/...), shifting every index by one.
+    m = re.search(r'dm(\d+)_nh(\d+)_ff(\d+)_nl(\d+)', os.path.basename(weight))
+    if not m:
+        raise ValueError(f"couldn't parse dm/nh/ff/nl from weights filename: {weight}")
+    d_model, num_heads, ff_hidden_layer, num_layers = (int(g) for g in m.groups())
     dropout       = 0.25
     print(d_model, num_heads, ff_hidden_layer, num_layers)
 
