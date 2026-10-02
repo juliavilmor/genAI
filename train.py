@@ -216,11 +216,28 @@ def train_epoch_scheduled_sampling(model, dataloader, criterion, optimizer, toke
 
 
 def evaluate_epoch(model, dataloader, criterion, tokenizer, fabric, verbose=1):
-    """Evaluate the model for one epoch."""
+    """Evaluate the model for one epoch.
+
+    Reports two validation signals on the same held-out batches:
+      - teacher-forced loss/accuracy (avg_val_loss_tf / accuracy_tf): one
+        forward pass, ground-truth history at every position -- exactly like
+        the training loss, just on unseen data. Clean, directly comparable to
+        T_loss, expected to trend down then plateau/rise on overfitting.
+        This is the signal EarlyStopping should use.
+      - free-running loss/accuracy (avg_val_loss / accuracy, unchanged from
+        before): a full autoregressive rollout from the protein prefix, i.e.
+        what actually happens at generation time. Kept as a diagnostic of the
+        teacher-forced <-> autoregressive (exposure bias) gap -- it does NOT
+        reliably trend down early in training and previously broke
+        EarlyStopping when used directly for it (LAB_NOTEBOOK B.9).
+    """
 
     model.eval()
 
     total_val_loss = 0
+    total_val_loss_tf = 0
+    total_val_correct_tf = 0
+    total_val_scored_tf = 0
 
     total_val_predicted = []
     total_val_labels = []
@@ -228,19 +245,36 @@ def evaluate_epoch(model, dataloader, criterion, tokenizer, fabric, verbose=1):
     with torch.no_grad():
 
         for i, batch in enumerate(dataloader):
-            
+
             if verbose >= 1 and fabric.is_global_zero:
                 fabric.print(f"\tV.E.Batch {i+1} of {len(dataloader)} with size {batch['input_ids'].shape[0]}")
-                
+
             input_tensor = batch['input_ids']
+            attention_mask = batch['attention_mask']
             labels = batch['labels']
 
             pad_id = tokenizer.prot_tokenizer.pad_token_id
             batch_size = labels.shape[0]
             seq_length = labels.shape[1]
-
-            # Start autoregressive eval with prot + <del>
             delim_idx = (input_tensor[0] == tokenizer.delim_token_id).nonzero().item()
+
+            # --- Teacher-forced pass: single forward, ground-truth history ---
+            # (same construction as train_epoch_scheduled_sampling's
+            # run_teacher_forcing; reuses the batch already loaded, so this is
+            # one extra forward pass per batch, not a second pass over the
+            # dataloader -- cheap relative to the max_len-step rollout below.)
+            tf_logits = model(input_tensor, attention_mask, tokenizer.delim_token_id, fabric)
+            tf_labels = fabric.to_device(labels)
+            tf_loss = criterion(tf_logits.reshape(-1, tf_logits.size(-1)), tf_labels.reshape(-1))
+            total_val_loss_tf += tf_loss.item()
+
+            tf_preds = tf_logits.argmax(-1)
+            tf_scored = tf_labels != -100
+            total_val_correct_tf += ((tf_preds == tf_labels) & tf_scored).sum().item()
+            total_val_scored_tf += tf_scored.sum().item()
+
+            # --- Free-running pass: autoregressive rollout (existing diagnostic) ---
+            # Start autoregressive eval with prot + <del>
             input_decoder = input_tensor[:, :delim_idx+1]
             input_decoder = fabric.to_device(input_decoder)
             predicted = []
@@ -281,6 +315,9 @@ def evaluate_epoch(model, dataloader, criterion, tokenizer, fabric, verbose=1):
             fabric.barrier()
             
     avg_val_loss = total_val_loss / len(dataloader)
+    avg_val_loss_tf = total_val_loss_tf / len(dataloader)
+    accuracy_tf = total_val_correct_tf / max(total_val_scored_tf, 1)
+
     precision = precision_score(total_val_labels,
                                 total_val_predicted,
                                 average='macro',
@@ -297,7 +334,7 @@ def evaluate_epoch(model, dataloader, criterion, tokenizer, fabric, verbose=1):
 
     other_metrics = {'precision': precision, 'recall': recall, 'f1': f1}
 
-    return avg_val_loss, accuracy, other_metrics
+    return avg_val_loss, accuracy, other_metrics, avg_val_loss_tf, accuracy_tf
 
 # TRAINING FUNCTION
 def train_model(prot_seqs,
@@ -473,10 +510,19 @@ def train_model(prot_seqs,
 
     early_stopping = EarlyStopping(patience=patience, delta=delta, verbose=verbose)
 
+    # One metrics file per run, named after its full identity (wandb_name already
+    # encodes dims + lr + batch size + dropout) and grouped by wandb_project, so
+    # two differently-configured runs that happen to share dims no longer collide
+    # into the same file. Previously this wrote only a header here, and every
+    # per-epoch row went to a second, dims-only file below -- that file is gone.
+    metrics_dir = os.path.join('metrics', wandb_project) if wandb_project else 'metrics'
+    os.makedirs(metrics_dir, exist_ok=True)
+    metrics_path = os.path.join(metrics_dir, f'{wandb_name}.csv')
+
     if fabric.is_global_zero and not resume_training:
-        with open(f'metrics/{wandb_name}.csv', 'w') as f:
-            f.write('Epoch,T_loss,T_acc,V_loss,V_acc,Pre,Rec,F1\n')
-            
+        with open(metrics_path, 'w') as f:
+            f.write('Epoch,T_loss,T_acc,V_loss,V_acc,Pre,Rec,F1,V_loss_tf,V_acc_tf\n')
+
     for epoch in range(start_epoch, num_epochs):
         if verbose >=0:
             fabric.print(f"\nEPOCH {epoch+1}/{num_epochs}")
@@ -508,30 +554,32 @@ def train_model(prot_seqs,
                 timer_val = Timer(autoreset=True)
                 timer_val.start('Validation Epoch %d/%d'%(epoch+1, num_epochs))
 
-            avg_val_loss, val_acc, other_metrics = evaluate_epoch(model, val_dataloader,
-                                                                criterion, tokenizer,
-                                                                fabric, verbose)
+            avg_val_loss, val_acc, other_metrics, avg_val_loss_tf, val_acc_tf = evaluate_epoch(
+                model, val_dataloader, criterion, tokenizer, fabric, verbose)
             avg_val_acc = fabric.all_reduce(val_acc, reduce_op='mean')
+            avg_val_acc_tf = fabric.all_reduce(val_acc_tf, reduce_op='mean')
 
             if verbose >=2 and fabric.is_global_zero:
                 timer_val.stop()
-                
+
         else:
             fabric.print('Skipping validation...\n')
             avg_val_loss,avg_val_acc,other_metrics = 0,0,{'precision':0,'recall':0,'f1':0}
+            avg_val_loss_tf, avg_val_acc_tf = 0, 0
 
-        # Save the metrics into a csv
+        # Save the metrics into a csv (one file per run -- see metrics_path above)
         if fabric.is_global_zero:
-            with open(f'metrics/train_dm{d_model}_nh{num_heads}_ff{ff_hidden_layer}_nl{num_layers}.csv', 'a') as f:
+            with open(metrics_path, 'a') as f:
                 f.write(
-                    f"{epoch + 1},{avg_train_loss},{avg_train_acc},{avg_val_loss},{avg_val_acc},{other_metrics['precision']},{other_metrics['recall']},{other_metrics['f1']}\n"
+                    f"{epoch + 1},{avg_train_loss},{avg_train_acc},{avg_val_loss},{avg_val_acc},{other_metrics['precision']},{other_metrics['recall']},{other_metrics['f1']},{avg_val_loss_tf},{avg_val_acc_tf}\n"
                 )
 
         # Print the metrics
         if verbose >=1:
             fabric.print(f"Epoch {epoch+1}/{num_epochs}, "\
                         f"Train Loss: {avg_train_loss:.4f}, Train Accuracy: {avg_train_acc:.4f}, "\
-                        f"Validation Loss: {avg_val_loss:.4f}, Validation Accuracy: {avg_val_acc:.4f}")
+                        f"Validation Loss (free-running): {avg_val_loss:.4f}, Validation Accuracy (free-running): {avg_val_acc:.4f}, "\
+                        f"Validation Loss (teacher-forced): {avg_val_loss_tf:.4f}, Validation Accuracy (teacher-forced): {avg_val_acc_tf:.4f}")
 
             if verbose >=1:
                 fabric.print(f"Precision: {other_metrics['precision']:.4f}, "\
@@ -541,15 +589,23 @@ def train_model(prot_seqs,
                 # log metrics to wandb
                 wandb.log({"Epoch": epoch+1, "Train Loss": avg_train_loss,
                         "Train Accuracy": avg_train_acc,
-                        "Validation Loss": avg_val_loss,
-                        "Validation Accuracy": avg_val_acc,
+                        "Validation Loss (free-running)": avg_val_loss,
+                        "Validation Accuracy (free-running)": avg_val_acc,
+                        "Validation Loss (teacher-forced)": avg_val_loss_tf,
+                        "Validation Accuracy (teacher-forced)": avg_val_acc_tf,
                         "Validation Precision": other_metrics['precision'],
                         "Validation Recall": other_metrics['recall'],
                         "Validation F1": other_metrics['f1']})
 
-        # Early stopping based on validation loss (or training loss if no validation)
+        # Early stopping based on the teacher-forced validation loss (or
+        # training loss if no validation). NOTE: previously used the
+        # free-running avg_val_loss, which is noisy from epoch 1 and doesn't
+        # reliably trend down -- see LAB_NOTEBOOK B.9. avg_val_loss_tf is
+        # directly comparable to avg_train_loss (same teacher-forced setup on
+        # held-out data), so it's the metric that should actually reflect
+        # overfitting.
         if len(val_dataloader) > 0:
-            early_stopping(avg_val_loss, model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch)
+            early_stopping(avg_val_loss_tf, model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch)
         else:
             early_stopping(avg_train_loss, model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch)
             
