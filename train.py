@@ -495,11 +495,18 @@ def train_model(prot_seqs,
         weights_path = weights_files[-1]
     
     start_epoch = 0
+    resumed_best_score = None
+    resumed_counter = None
     if resume_training and os.path.exists(weights_path):
         checkpoint = fabric.load(weights_path)
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         start_epoch = checkpoint['epoch'] + 1 # Start from the next epoch
+        # Older checkpoints (saved before EarlyStopping started persisting
+        # these) won't have these keys -- resumed_best_score stays None and
+        # EarlyStopping falls back to its fresh-start default (np.inf).
+        resumed_best_score = checkpoint.get('best_score')
+        resumed_counter = checkpoint.get('counter')
 
         if verbose >=0:
             fabric.print(f"Resuming training from epoch {start_epoch}")
@@ -509,6 +516,16 @@ def train_model(prot_seqs,
         fabric.print('Starting the training loop...')
 
     early_stopping = EarlyStopping(patience=patience, delta=delta, verbose=verbose)
+    if resumed_best_score is not None:
+        # Without this, the single-checkpoint-file case (checkpoint_epoch=False)
+        # would treat the first post-resume epoch as automatically "best"
+        # (anything beats a fresh np.inf) and overwrite a genuinely better
+        # earlier checkpoint with it.
+        early_stopping.best_score = resumed_best_score
+        if resumed_counter is not None:
+            early_stopping.counter = resumed_counter
+        if verbose >= 1:
+            fabric.print(f"EarlyStopping: resumed best_score={resumed_best_score:.6f}, counter={early_stopping.counter}")
 
     # One metrics file per run, named after its full identity (wandb_name already
     # encodes dims + lr + batch size + dropout) and grouped by wandb_project, so

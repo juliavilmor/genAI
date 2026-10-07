@@ -12,7 +12,9 @@ class EarlyStopping:
         
     def __call__(self, score, model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch=0):
 
-        if self.best_score - score > self.delta:
+        improved = self.best_score - score > self.delta
+
+        if improved:
             if self.verbose >= 1:
                 fabric.print(f'EarlyStopping: Validation score improved ({self.best_score:.6f} --> {score:.6f}). '\
                             'Stopping counter to 0.')
@@ -26,13 +28,22 @@ class EarlyStopping:
             if self.counter >= self.patience:
                 self.early_stop = True
 
-        self.save_checkpoint(model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch)
+        # checkpoint_epoch=True keeps one file per epoch regardless of
+        # improvement (that's its point -- a full history to pick from
+        # later). checkpoint_epoch=False keeps a single file per run, so it
+        # must only be overwritten on improvement, or it just holds the last
+        # epoch trained (whatever that happened to be when training stopped)
+        # instead of the best one the run ever reached.
+        if checkpoint_epoch or improved:
+            self.save_checkpoint(model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch)
 
     def save_checkpoint(self, model, weights_path, epoch, optimizer, fabric, checkpoint_epoch, resume_training, start_epoch):
         state = {
             'model': model,
             'epoch': epoch,
             'optimizer': optimizer,
+            'best_score': self.best_score,
+            'counter': self.counter,
             }
         if checkpoint_epoch:
             if resume_training:
