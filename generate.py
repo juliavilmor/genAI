@@ -9,9 +9,44 @@ import time
 from utils.molecular_properties import compute_properties
 
 
+def _select_next_token(logits, strategy, temperature, top_p):
+    """logits: (1, vocab) raw scores for the next position.
+
+    strategy='temperature' (default): unchanged behaviour -- softmax(logits
+        / temperature), sample. temperature=1.2 everywhere in Part B.
+    strategy='greedy': deterministic argmax, temperature/top_p ignored.
+    strategy='nucleus': top-p (nucleus) filtering -- keep the smallest set of
+        highest-probability tokens whose cumulative probability >= top_p,
+        renormalize, sample from that set. Applied after the temperature
+        scaling, same as greedy/temperature sampling in standard nucleus-
+        sampling formulations (Holtzman et al. 2020).
+    """
+    if strategy == 'greedy':
+        return logits.argmax(dim=-1).item()
+
+    scaled_logits = logits / temperature
+    probs = F.softmax(scaled_logits, dim=-1)
+
+    if strategy == 'nucleus':
+        sorted_probs, sorted_idx = torch.sort(probs, descending=True, dim=-1)
+        cumulative = torch.cumsum(sorted_probs, dim=-1)
+        # Keep the smallest prefix whose cumulative prob >= top_p, always
+        # keeping at least the single highest-probability token.
+        cutoff = (cumulative >= top_p).float().argmax(dim=-1).item()
+        keep = sorted_probs[:, :cutoff + 1]
+        keep = keep / keep.sum(dim=-1, keepdim=True)
+        sampled_pos = torch.multinomial(keep, num_samples=1)
+        return sorted_idx[:, :cutoff + 1].gather(-1, sampled_pos).item()
+
+    if strategy != 'temperature':
+        raise ValueError(f"unknown strategy '{strategy}' (expected 'temperature', 'greedy', or 'nucleus')")
+    return torch.multinomial(probs, num_samples=1).item()
+
+
 # Generate new text (SMILES strings) using the model
-def generate_smiles(model, sequence, fabric, max_length=50, temperature=1.0, verbose=True):
-    
+def generate_smiles(model, sequence, fabric, max_length=50, temperature=1.0, verbose=True,
+                     strategy='temperature', top_p=0.9):
+
     model.eval()  # Set the model to evaluation mode
     model = fabric.to_device(model)
 
@@ -42,11 +77,10 @@ def generate_smiles(model, sequence, fabric, max_length=50, temperature=1.0, ver
             
             # Predict the next token
             logits = model(input_tensor, input_att_mask, tokenizer.delim_token_id, fabric)
-            
-            next_token_logits = logits[:, -1, :] / temperature
-            next_token_probs = F.softmax(next_token_logits, dim=-1)
-            next_token_id = torch.multinomial(next_token_probs, num_samples=1).item()
-            
+
+            next_token_logits = logits[:, -1, :]
+            next_token_id = _select_next_token(next_token_logits, strategy, temperature, top_p)
+
             # Stop generation if the end token is generated
             if next_token_id == mol_tokenizer.eos_token_id:
                 break
@@ -66,10 +100,12 @@ def generate_smiles(model, sequence, fabric, max_length=50, temperature=1.0, ver
         
     return tokenizer.decode(generated_token_ids, skip_special_tokens=True)
 
-def generate(quantity, sequence, model, fabric, max_length=50, temperature=1.0, verbose=False, outdir='.', outname='generated_smiles'):
+def generate(quantity, sequence, model, fabric, max_length=50, temperature=1.0, verbose=False, outdir='.',
+             outname='generated_smiles', strategy='temperature', top_p=0.9):
     valid_smiles = []
     for _ in range(quantity):
-        generated_smiles = generate_smiles(model, sequence, fabric, max_length, temperature, verbose=verbose)
+        generated_smiles = generate_smiles(model, sequence, fabric, max_length, temperature, verbose=verbose,
+                                            strategy=strategy, top_p=top_p)
         print(generated_smiles)
         
         with open('%s/%s.txt'%(outdir, outname), 'a') as f:

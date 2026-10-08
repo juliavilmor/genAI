@@ -10,8 +10,8 @@ from utils.tokenizer import Tokenizer
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-def run_test(weight, outdir, outname):
-    
+def run_test(weight, outdir, outname, strategy='temperature', temperature=1.2, top_p=0.9):
+
     os.makedirs(outdir, exist_ok=True)
 
     # List of protein sequences for the 3 tests (harcoded for now)
@@ -67,9 +67,10 @@ def run_test(weight, outdir, outname):
         for i, seq in data.items():
             print(test_type, i)
             generated_smiles, sucess_rate = generate(Ngen, seq, model, fabric, max_length=80,\
-                                                    temperature=1.2, verbose=False,\
+                                                    temperature=temperature, verbose=False,\
                                                     outdir=outdir,\
-                                                    outname='generated_molecules_%s_seq_%s'%(test_type, i))
+                                                    outname='generated_molecules_%s_seq_%s'%(test_type, i),\
+                                                    strategy=strategy, top_p=top_p)
             
             # Add Ngen, Nval, Nuniq, Nunk
             Nval = len(generated_smiles)
@@ -183,13 +184,18 @@ if __name__ == "__main__":
     parser.add_argument('--weights_file', type=str, required=True, help='Path to the model weights file.')
     parser.add_argument('--outdir', type=str, required=True, default='test_generation', help='Directory to save the results.')
     parser.add_argument('--outname', type=str, required=True, default='results_test', help='Name of the results file.')
+    parser.add_argument('--strategy', type=str, default='temperature', choices=['temperature', 'greedy', 'nucleus'],
+                         help='Decoding strategy (default: temperature, the Part B baseline).')
+    parser.add_argument('--temperature', type=float, default=1.2,
+                         help='Softmax temperature for strategy=temperature or nucleus (default: 1.2).')
+    parser.add_argument('--top_p', type=float, default=0.9, help='Nucleus cumulative-probability threshold (strategy=nucleus only).')
     args = parser.parse_args()
-    
+
     weights_file = args.weights_file
     outdir = args.outdir
     outname = args.outname
-    
+
     # Run the test function
-    run_test(weights_file, outdir, outname)
+    run_test(weights_file, outdir, outname, strategy=args.strategy, temperature=args.temperature, top_p=args.top_p)
     analyse_test(weights_file, f'{outdir}/{outname}.csv', outdir)
     
