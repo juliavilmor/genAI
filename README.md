@@ -170,7 +170,10 @@ batch_size: 64
 num_epochs: 50
 learning_rate: 0.0001
 loss_function: 'crossentropy'
-label_smoothing: False                       # or a float, e.g. 0.1
+label_smoothing: 0.0                         # float in [0, 1). False/0.0 disable it.
+                                             # `True` is REJECTED: it coerces to 1.0,
+                                             # which makes the targets uniform so the
+                                             # model cannot learn (loss pins at ln(vocab)).
 optimizer: 'AdamW'                            # 'Adam' | 'AdamW'
 weight_decay: 0.001
 betas: [0.9, 0.99]

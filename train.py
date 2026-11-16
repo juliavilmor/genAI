@@ -462,7 +462,23 @@ def train_model(prot_seqs,
     # TO DO: Add support for other loss functions and optimizers
     # Loss function
     if loss_function == 'crossentropy':
-        if label_smoothing:
+        # `label_smoothing: True` in a config silently became 1.0 here, which
+        # makes the target distribution completely uniform: there is no signal
+        # left and the loss sits at ln(vocab) = 4.2627 forever. Thirteen Optuna
+        # trials died that way and looked like a finding about AdamW. A bool is
+        # never a valid smoothing factor, so reject it instead of coercing.
+        if isinstance(label_smoothing, bool):
+            if label_smoothing:
+                raise ValueError(
+                    "label_smoothing=True is not a smoothing factor -- it "
+                    "coerces to 1.0, which makes the targets uniform and the "
+                    "model unable to learn. Use a float such as 0.05, or "
+                    "False/0.0 to disable.")
+            label_smoothing = 0.0
+        label_smoothing = float(label_smoothing or 0.0)
+        if not 0.0 <= label_smoothing < 1.0:
+            raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing}")
+        if label_smoothing > 0.0:
             criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=label_smoothing)
         else:
             criterion = nn.CrossEntropyLoss(ignore_index=-100)

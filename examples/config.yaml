@@ -10,7 +10,7 @@ batch_size: 10
 num_epochs: 10
 learning_rate: 0.0001
 loss_function: 'crossentropy'
-label_smoothing: False
+label_smoothing: 0.0        # float in [0, 1); `True` is rejected (coerces to 1.0)
 optimizer: 'AdamW'
 weight_decay: 0.001
 betas: [0.9, 0.999]
