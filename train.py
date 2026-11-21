@@ -576,6 +576,22 @@ def train_model(prot_seqs,
                                                                     scheduled_sampling,
                                                                     10, verbose)
 
+        # Losses must be reduced across ranks too, not just accuracies.
+        #
+        # Each rank sees its own shard of the data, so each computes a
+        # different mean loss. Early stopping then ran on a per-rank number:
+        # `improved = best_score - score > delta` with delta=1e-4, and
+        # `fabric.save` is a COLLECTIVE that only fires `if improved`. Once the
+        # epoch-on-epoch improvement shrank to the order of delta, ranks
+        # straddled the threshold, a subset called fabric.save, and the job
+        # deadlocked until the NCCL watchdog killed it 600 s later. That is
+        # why every one of those hangs landed at an epoch boundary late in
+        # training (epochs 22, 23, 25, 28, 47) and never in the first ten.
+        #
+        # Reducing the score makes every rank decide identically, which also
+        # keeps `counter` and `early_stop` in sync. As a side effect the logged
+        # losses become the real validation loss rather than rank 0's shard.
+        avg_train_loss = float(fabric.all_reduce(avg_train_loss, reduce_op='mean'))
         avg_train_acc = fabric.all_reduce(train_acc, reduce_op='mean')
 
         if verbose >=2 and fabric.is_global_zero:
@@ -589,6 +605,8 @@ def train_model(prot_seqs,
 
             avg_val_loss, val_acc, other_metrics, avg_val_loss_tf, val_acc_tf = evaluate_epoch(
                 model, val_dataloader, criterion, tokenizer, fabric, verbose)
+            avg_val_loss = float(fabric.all_reduce(avg_val_loss, reduce_op='mean'))
+            avg_val_loss_tf = float(fabric.all_reduce(avg_val_loss_tf, reduce_op='mean'))
             avg_val_acc = fabric.all_reduce(val_acc, reduce_op='mean')
             avg_val_acc_tf = fabric.all_reduce(val_acc_tf, reduce_op='mean')
 
